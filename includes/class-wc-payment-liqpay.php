@@ -24,6 +24,7 @@ class WC_Gateway_Liqpay extends WC_Payment_Gateway
     $this->lang = $this->get_option('lang', 'ru');
     $this->enable_for_methods = $this->get_option('enable_for_methods', array());
     $this->enable_for_virtual = $this->get_option('enable_for_virtual', 'yes') === 'yes';
+    $this->server_url = WC()->api_request_url('WC_Gateway_Liqpay');
     
     // Update Gateways
     add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
@@ -154,6 +155,8 @@ class WC_Gateway_Liqpay extends WC_Payment_Gateway
 
     require_once(__DIR__ . '/classes/LiqPay.php');
     $LiqPay = new LiqPay($this->get_option('public_key'), $this->get_option('private_key'));
+
+    file_put_contents('server_url.log', $this->server_url);
     
     // Get redirect link for payment by Liqpay API
     $url = $LiqPay->cnb_link(array(
@@ -164,7 +167,7 @@ class WC_Gateway_Liqpay extends WC_Payment_Gateway
       'description' => $this->getDescription($order->get_id()),
       'order_id' => $order->get_id(),
       'result_url' => $this->get_return_url($order),
-      'server_url' => WC()->api_request_url('WC_Payment_Gateway_Liqpay'),
+      'server_url' => $this->server_url,
       'language' => $this->get_option('lang'),
       'sandbox' => '1'
     ));
@@ -181,9 +184,8 @@ class WC_Gateway_Liqpay extends WC_Payment_Gateway
   public function callback()
   {
     $post = file_get_contents("php://input");
-    $parts = parse_url($post);
-    // Get array of args from POST request
-    parse_str($parts['query'], $query);
+     // Get array of args from POST request
+    parse_str($post, $query);
     if (isset($query['data'])) {
       $private_key = $this->get_option('private_key');
       $data        = $query['data'];
@@ -196,9 +198,19 @@ class WC_Gateway_Liqpay extends WC_Payment_Gateway
 
       $status = ($parsed_data['status'] == 'success' || $parsed_data['status'] == 'sandbox') ? $liqpay_order_success_status : $liqpay_order_failure_status;
 
+      // Uncomment to log LiqPay responce
+			// $fp = fopen('payment.log', "a+");
+			// fwrite($fp, 'DATA (RECEIVED): ' . $data . PHP_EOL);
+			// fwrite($fp, 'DATA (PARSED): ' . print_r($parsed_data, true) . PHP_EOL);
+			// fwrite($fp, 'SIGNATURE (RECEIVED): ' . $signature . PHP_EOL);
+			// fwrite($fp, 'SIGNATURE (ENCODED): ' . $signature . PHP_EOL . PHP_EOL);
+			// fwrite($fp, 'STATUS:' . $status);
+			// fwrite($fp, $data['1']->value . PHP_EOL . $data['2']->value);
+			// fclose($fp);
+
       if ($sign_check == $signature) {
         $order = wc_get_order($parsed_data['order_id']);
-        $order->update_status('pending', $status);
+        $order->update_status($status, '', true);
       }
     }
   }
